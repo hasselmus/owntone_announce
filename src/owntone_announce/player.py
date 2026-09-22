@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .mpd import MPDClient, fields, quote
+from .mpd import MPDClient, MPDError, fields, quote
 from .owntone import OwnToneHTTP, virtual_file_path
 
 
@@ -30,7 +30,9 @@ class AnnouncementPlayer:
         return fd
 
     def _boost_output_volumes(self) -> dict[str, tuple[int, int]]:
-        changed: dict[str, tuple[int, int]] = {}
+        # Track all selected outputs, not only those whose volume changes. That
+        # lets paused-state restoration temporarily mute every untouched output.
+        state: dict[str, tuple[int, int]] = {}
         try:
             for output in self.http.outputs():
                 if not output.get("selected"):
@@ -38,13 +40,13 @@ class AnnouncementPlayer:
                 output_id = str(output["id"])
                 old = int(output.get("volume") or 0)
                 temporary = max(old, self.minimum_volume)
+                state[output_id] = (old, temporary)
                 if temporary != old:
                     self.http.set_output_volume(output_id, temporary)
-                    changed[output_id] = (old, temporary)
         except Exception:
-            self._restore_output_volumes(changed, preserve_manual_changes=False)
+            self._restore_output_volumes(state, preserve_manual_changes=False)
             raise
-        return changed
+        return state
 
     def _restore_output_volumes(
         self, changed: dict[str, tuple[int, int]], preserve_manual_changes: bool = True
@@ -67,6 +69,91 @@ class AnnouncementPlayer:
             except Exception:
                 pass
 
+    def _mute_unchanged_outputs(
+        self, volume_state: dict[str, tuple[int, int]]
+    ) -> set[str]:
+        """Mute outputs whose volume still equals the temporary announcement value."""
+        if not volume_state:
+            return set()
+        try:
+            current = {
+                str(o["id"]): int(o.get("volume") or 0) for o in self.http.outputs()
+            }
+        except Exception:
+            return set()
+
+        muted: set[str] = set()
+        for output_id, (_old, temporary) in volume_state.items():
+            if current.get(output_id) != temporary:
+                # Assume the user changed this output during the announcement.
+                continue
+            try:
+                self.http.set_output_volume(output_id, 0)
+                muted.add(output_id)
+            except Exception:
+                pass
+        return muted
+
+    def _restore_muted_outputs(
+        self, volume_state: dict[str, tuple[int, int]], muted: set[str]
+    ) -> None:
+        if not muted:
+            return
+        try:
+            current = {
+                str(o["id"]): int(o.get("volume") or 0) for o in self.http.outputs()
+            }
+        except Exception:
+            current = {}
+
+        for output_id in muted:
+            old, _temporary = volume_state[output_id]
+            try:
+                # If somebody changed the volume in this very small window,
+                # respect that manual intervention rather than overwriting it.
+                if not current or current.get(output_id) == 0:
+                    self.http.set_output_volume(output_id, old)
+            except Exception:
+                pass
+
+    def _start_announcement(self, ann_id: int) -> None:
+        """Start playback, tolerating one output activation failure.
+
+        OwnTone deselects an output that fails activation. If playid reports an
+        error because one receiver disappeared, either the announcement is
+        already running on the remaining outputs or a single retry can start it
+        after the failed receiver has been deselected.
+        """
+        try:
+            self.mpd.command(f"playid {ann_id}")
+            return
+        except (MPDError, OSError) as first_error:
+            time.sleep(0.25)
+
+            try:
+                status = self.http.player()
+                if status.get("item_id") == ann_id and status.get("state") == "play":
+                    return
+            except Exception:
+                pass
+
+            try:
+                if not any(o.get("selected") for o in self.http.outputs()):
+                    raise RuntimeError(
+                        "No OwnTone outputs remain selected after an output activation failure"
+                    ) from first_error
+            except RuntimeError:
+                raise
+            except Exception:
+                pass
+
+            try:
+                self._start_announcement(ann_id)
+            except (MPDError, OSError) as second_error:
+                raise RuntimeError(
+                    "OwnTone could not start the announcement after retrying output activation"
+                ) from second_error
+
     def _restore(self, state: str, song_id: int | None, elapsed: float) -> None:
         if state in ("play", "pause") and song_id is not None:
             self.mpd.command(f"playid {song_id}", ignore_error=True)
@@ -84,6 +171,11 @@ class AnnouncementPlayer:
         lock_fd = self._lock()
         try:
             original = fields(self.mpd.command("status"))
+            if original.get("updating_db") == "1":
+                raise RuntimeError(
+                    "OwnTone library scan is in progress; refusing announcement playback "
+                    "until the scan completes"
+                )
             original_state = original.get("state", "stop")
             original_id: int | None = None
             original_elapsed = 0.0
@@ -123,9 +215,19 @@ class AnnouncementPlayer:
                 else:
                     raise TimeoutError("Announcement did not finish before timeout")
             finally:
-                self._restore_output_volumes(volume_changes)
-                if should_restore:
-                    self._restore(original_state, original_id, original_elapsed)
+                if should_restore and original_state == "pause":
+                    # playid/seekid both transiently start playback. Keep the
+                    # receivers muted until OwnTone is back in PAUSED state.
+                    muted = self._mute_unchanged_outputs(volume_changes)
+                    try:
+                        self._restore(original_state, original_id, original_elapsed)
+                    finally:
+                        self._restore_muted_outputs(volume_changes, muted)
+                else:
+                    self._restore_output_volumes(volume_changes)
+                    if should_restore:
+                        self._restore(original_state, original_id, original_elapsed)
+
                 if ann_id is not None:
                     self.mpd.command(f"deleteid {ann_id}", ignore_error=True)
         finally:
