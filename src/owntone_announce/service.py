@@ -6,7 +6,7 @@ from typing import Any
 
 from .homebridge import sync_homebridge
 from .mpd import MPDClient, MPDError, quote
-from .owntone import OwnToneHTTP, virtual_file_path
+from .owntone import virtual_file_path
 from .registry import Registry
 from .tts import synthesize_wav
 from .util import validate_name
@@ -18,7 +18,6 @@ class AnnouncementService:
         self.registry = registry
         ow = cfg["owntone"]
         self.audio_dir = Path(ow["audio_dir"])
-        self.http = OwnToneHTTP(ow["host"], int(ow["http_port"]))
         self.mpd = MPDClient(ow["host"], int(ow["mpd_port"]))
 
     def _wait_indexed(self, wav: Path, timeout: float = 60.0) -> None:
