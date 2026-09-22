@@ -39,7 +39,7 @@ def test_start_retries_after_failed_output_activation(monkeypatch):
     monkeypatch.setattr("owntone_announce.player.time.sleep", lambda _x: None)
 
     player._start_announcement(7)
-    assert player.mpd.calls == 2
+    assert player.mpd.calls == 3
 
 
 def test_pause_restore_mute_only_unchanged_outputs():
