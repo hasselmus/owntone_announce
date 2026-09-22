@@ -371,7 +371,10 @@ class AnnouncementPlayer:
                     # produces the blank/non-playing Remote state.
                     try:
                         current = self._status()
-                        if current.get("songid") != str(ann_id):
+                        if (
+                            current.get("state") == "stop"
+                            or current.get("songid") != str(ann_id)
+                        ):
                             self.mpd.command(f"deleteid {ann_id}", ignore_error=True)
                     except Exception:
                         pass
