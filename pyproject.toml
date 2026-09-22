@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "owntone-announce"
+version = "0.1.0"
+description = "Low-friction spoken announcements through OwnTone, with optional Homebridge switches"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "owntone_announce contributors"}]
+dependencies = [
+  "edge-tts>=7,<8",
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+]
+
+[project.scripts]
+owntone-announce = "owntone_announce.cli:main"
+alarm-audio = "owntone_announce.cli:legacy_main"
+
+[project.urls]
+Repository = "https://github.com/hasselmus/owntone_announce"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
