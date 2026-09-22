@@ -13,9 +13,10 @@ owntone-announce remove dinner
 ```
 
 `add` uses Microsoft Edge neural TTS through `edge-tts`, converts the result to a
-local WAV, asks OwnTone to index it, and records it in the registry. Playback is
-local after generation; an Internet connection is only needed while generating
-new TTS audio.
+local WAV, publishes it atomically inside OwnTone's watched library, waits for
+OwnTone to index that single filesystem event, and records it in the registry.
+It does **not** request a full library rescan. Playback is local after generation;
+an Internet connection is only needed while generating new TTS audio.
 
 ## What it does
 
@@ -265,8 +266,31 @@ WAV and does not require the TTS service.
 
 ### Queue restoration
 
-Seekable tracks resume near their previous position. A non-seekable stream may
-restart because OwnTone/MPD cannot seek it.
+Seekable tracks resume near their previous position. If playback was paused before
+the announcement, it is restored to the paused state without intentionally
+unpausing the receivers: selected outputs whose volume was not manually changed
+are briefly muted while OwnTone performs the internal play/seek/pause sequence.
+
+A non-seekable stream may restart because OwnTone/MPD cannot seek it.
+
+### Library scans
+
+Adding and removing announcements relies on OwnTone's filesystem watcher and does
+not trigger `/api/update`. This matters for large libraries, where a full rescan
+can take minutes.
+
+If OwnTone is already performing a bulk library scan for some other reason,
+`owntone-announce play` refuses to modify the queue while MPD reports
+`updating_db: 1`. This avoids known database-lock/deadlock failures; retry after
+the scan completes.
+
+### Temporarily unreachable outputs
+
+OwnTone deselects an AirPlay/other output when that receiver fails activation.
+`owntone-announce` tolerates this by checking whether playback nevertheless
+started on the remaining outputs and otherwise retrying once after OwnTone has
+deselected the failed receiver. If no selected outputs remain, the announcement
+fails rather than selecting a different speaker on its own.
 
 ## Development
 
