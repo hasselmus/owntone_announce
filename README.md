@@ -202,7 +202,7 @@ installed and configured.
 
 ## Alarm / existing installations
 
-The package installs an `alarm-audio` compatibility entry point, so existing
+The package provides an `alarm-audio` compatibility entry point, so existing
 Homebridge hooks such as:
 
 ```text
@@ -229,6 +229,15 @@ sudo owntone-announce add triggered "Alarm triggered."
 
 These should normally *not* use `--homebridge`: the security-system plugin
 already invokes them at the appropriate state transitions.
+
+For safety, `install.sh` preserves an existing non-symlink `/usr/local/bin/alarm-audio`
+instead of replacing a working legacy alarm hook before these messages exist. After
+adding and testing the registry entries, switch the old command to the packaged
+compatibility entry point:
+
+```bash
+sudo ln -sfn /opt/owntone-announce/venv/bin/alarm-audio /usr/local/bin/alarm-audio
+```
 
 ## Behaviour and limitations
 
