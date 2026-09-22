@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.3 - 2026-09-22
+
+- Temporarily disable repeat/single and consume while the transient announcement item is current, then restore the user's original modes.
+- Snapshot the original queue item's URI/path as well as its queue id and reconstruct it if the saved queue entry disappears.
+- Never delete the temporary announcement while OwnTone still reports it as the current item, avoiding a blank Remote/player state after a failed restore.
+- Apply output-activation retry logic when restoring the original source as well as when starting the announcement.
+- Preserve the improved per-output announcement volume handling from 0.1.2.
+
 ## 0.1.2 - 2026-09-22
 
 - Poll announcement playback and final player state through MPD instead of repeatedly calling the OwnTone HTTP player endpoint.
