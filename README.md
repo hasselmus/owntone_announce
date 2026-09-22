@@ -308,6 +308,20 @@ started on the remaining outputs and otherwise retrying once after OwnTone has
 deselected the failed receiver. If no selected outputs remain, the announcement
 fails rather than selecting a different speaker on its own.
 
+For interruption-style use, it is also strongly recommended to make OwnTone keep
+its queue across stop/abort events:
+
+```conf
+library {
+    clear_queue_on_stop_disable = true
+}
+```
+
+Without that setting, OwnTone's abort path can clear the queue after an output
+failure. Version 0.1.3 can reconstruct the previously current source from its saved
+URI, but it cannot reconstruct an entire arbitrary queue that OwnTone itself has
+discarded.
+
 ## Development
 
 ```bash
