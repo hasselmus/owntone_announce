@@ -1,0 +1,26 @@
+{
+  "owntone": {
+    "host": "127.0.0.1",
+    "http_port": 3689,
+    "mpd_port": 6600,
+    "audio_dir": "/var/owntone/announcements"
+  },
+  "playback": {
+    "minimum_volume": 40,
+    "trailing_silence_seconds": 2.0,
+    "restore_margin_seconds": 1.0,
+    "timeout_seconds": 30
+  },
+  "tts": {
+    "voice": "en-GB-SoniaNeural"
+  },
+  "state_dir": "/var/lib/owntone-announce",
+  "homebridge": {
+    "config_path": null,
+    "dummy_platform": "HomebridgeDummy",
+    "command": "/usr/local/bin/owntone-announce",
+    "auto_reset_ms": 500,
+    "restart_on_sync": false,
+    "restart_command": ["hb-service", "restart"]
+  }
+}
