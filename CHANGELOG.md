@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2 - 2026-09-22
+
+- Poll announcement playback and final player state through MPD instead of repeatedly calling the OwnTone HTTP player endpoint.
+- Restore paused sources synchronously: wait for play/seek transitions to settle, then reassert pause until OwnTone reports a stable paused state.
+- Make the HTTP-based per-output volume boost best-effort so a transient web API failure cannot prevent an announcement from playing.
+
 ## 0.1.1 - 2026-09-22
 
 - Stop triggering full OwnTone library rescans when adding or removing announcements; rely on OwnTone's filesystem watcher instead.
