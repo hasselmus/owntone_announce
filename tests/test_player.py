@@ -68,13 +68,12 @@ class SequenceMPD:
             ["state: play", "songid: 9"],
             ["state: play", "songid: 9"],
             ["state: pause", "songid: 9"],
-            ["state: pause", "songid: 9"],
-            ["state: pause", "songid: 9"],
-            ["state: pause", "songid: 9"],
         ]
 
     def command(self, command, **_kwargs):
         self.commands.append(command)
+        if command == "playlistid 9":
+            return ["file: file:/music/ambient.wav", "Id: 9"]
         if command == "status":
             return self.statuses.pop(0)
         return []
@@ -85,15 +84,16 @@ def test_restore_paused_waits_for_play_then_reasserts_pause(monkeypatch):
     player.mpd = SequenceMPD()
     monkeypatch.setattr("owntone_announce.player.time.sleep", lambda _x: None)
 
-    player._restore("pause", 9, 12.5)
+    player.http = FakeHTTP()
+    player._restore("pause", 9, 12.5, "file:/music/ambient.wav")
 
-    assert player.mpd.commands[:3] == [
+    assert player.mpd.commands[:4] == [
+        "playlistid 9",
         "playid 9",
         "status",
         "seekid 9 12.500",
     ]
     assert "pause 1" in player.mpd.commands
-    assert player.mpd.commands[-3:] == ["status", "status", "status"]
 
 
 class BrokenHTTP:
@@ -107,3 +107,48 @@ def test_volume_boost_is_best_effort():
     player.minimum_volume = 40
 
     assert player._boost_output_volumes() == {}
+
+
+class RecordingMPD:
+    def __init__(self, responses=None):
+        self.commands = []
+        self.responses = responses or {}
+
+    def command(self, command, **_kwargs):
+        self.commands.append(command)
+        value = self.responses.get(command, [])
+        return value() if callable(value) else value
+
+
+def test_repeat_single_and_consume_are_temporarily_disabled_and_restored():
+    player = AnnouncementPlayer.__new__(AnnouncementPlayer)
+    player.mpd = RecordingMPD()
+    original = {"repeat": "1", "single": "1", "consume": "1"}
+
+    player._disable_queue_modes_for_announcement(original)
+    player._restore_queue_modes(original)
+
+    assert player.mpd.commands == [
+        "repeat 0",
+        "single 0",
+        "consume 0",
+        "repeat 1",
+        "single 1",
+        "consume 1",
+    ]
+
+
+def test_original_item_is_readded_from_saved_uri_if_queue_id_disappears():
+    player = AnnouncementPlayer.__new__(AnnouncementPlayer)
+    player.mpd = RecordingMPD(
+        {
+            "playlistid 9": [],
+            'addid "file:/music/ambient.wav"': ["Id: 42"],
+        }
+    )
+
+    assert player._ensure_original_item(9, "file:/music/ambient.wav") == 42
+    assert player.mpd.commands == [
+        "playlistid 9",
+        'addid "file:/music/ambient.wav"',
+    ]
