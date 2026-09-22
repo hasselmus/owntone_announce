@@ -194,36 +194,94 @@ class AnnouncementPlayer:
             + f"; last status was {last}"
         )
 
-    def _restore(self, state: str, song_id: int | None, elapsed: float) -> None:
-        if state in ("play", "pause") and song_id is not None:
-            self.mpd.command(f"playid {song_id}")
-            self._wait_state("play", song_id=song_id)
+    def _snapshot_current_file(self, song_id: int | None) -> str | None:
+        if song_id is None:
+            return None
+        try:
+            return fields(self.mpd.command(f"playlistid {song_id}")).get("file")
+        except Exception:
+            return None
+
+    def _disable_queue_modes_for_announcement(self, original: dict[str, str]) -> None:
+        # Repeat-single would otherwise repeat the temporary announcement, and
+        # consume can mutate the queue while the interruption is in progress.
+        self.mpd.command("repeat 0", ignore_error=True)
+        self.mpd.command("single 0", ignore_error=True)
+        self.mpd.command("consume 0", ignore_error=True)
+
+    def _restore_queue_modes(self, original: dict[str, str]) -> None:
+        repeat = original.get("repeat", "0") == "1"
+        single = original.get("single", "0") == "1"
+        consume = original.get("consume", "0") == "1"
+
+        if repeat:
+            self.mpd.command("repeat 1", ignore_error=True)
+            self.mpd.command(f"single {1 if single else 0}", ignore_error=True)
+        else:
+            self.mpd.command("repeat 0", ignore_error=True)
+            self.mpd.command("single 0", ignore_error=True)
+        self.mpd.command(f"consume {1 if consume else 0}", ignore_error=True)
+
+    def _queue_item_exists(self, song_id: int | None) -> bool:
+        if song_id is None:
+            return False
+        try:
+            return bool(self.mpd.command(f"playlistid {song_id}"))
+        except Exception:
+            return False
+
+    def _ensure_original_item(
+        self, song_id: int | None, original_file: str | None
+    ) -> int | None:
+        if self._queue_item_exists(song_id):
+            return song_id
+        if not original_file:
+            return None
+        response = fields(self.mpd.command(f"addid {quote(original_file)}"))
+        try:
+            return int(response["Id"])
+        except (KeyError, ValueError):
+            return None
+
+    def _restore(
+        self,
+        state: str,
+        song_id: int | None,
+        elapsed: float,
+        original_file: str | None,
+    ) -> int | None:
+        if state in ("play", "pause"):
+            restore_id = self._ensure_original_item(song_id, original_file)
+            if restore_id is None:
+                raise RuntimeError("Original OwnTone queue item disappeared and could not be reconstructed")
+
+            self.mpd.command(f"playid {restore_id}")
+            self._wait_state("play", song_id=restore_id, timeout=5.0)
 
             if elapsed > 0.05:
-                self.mpd.command(f"seekid {song_id} {elapsed:.3f}")
-                # In OwnTone 29 seekid explicitly calls playback_start(). Wait
-                # for that transition to finish before attempting to pause.
-                self._wait_state("play", song_id=song_id)
+                self.mpd.command(f"seekid {restore_id} {elapsed:.3f}")
+                self._wait_state("play", song_id=restore_id, timeout=5.0)
 
             if state == "pause":
-                # OwnTone output activation / seek completion can race an early
-                # MPD pause command. Reassert PAUSE until it has been observed
-                # stable for several polls.
-                deadline = time.monotonic() + 4.0
+                deadline = time.monotonic() + 5.0
                 while time.monotonic() < deadline:
                     status = self._status()
-                    if status.get("state") == "pause" and status.get("songid") == str(song_id):
-                        self._wait_state(
-                            "pause", song_id=song_id, timeout=1.0, stable_checks=3
-                        )
-                        return
+                    if (
+                        status.get("state") == "pause"
+                        and status.get("songid") == str(restore_id)
+                    ):
+                        return restore_id
                     if status.get("state") == "play":
                         self.mpd.command("pause 1", ignore_error=True)
                     time.sleep(0.10)
                 raise RuntimeError("OwnTone would not return to the original paused state")
-        elif state == "stop":
+
+            return restore_id
+
+        if state == "stop":
             self.mpd.command("stop", ignore_error=True)
             self._wait_state("stop", timeout=2.0)
+        return song_id
 
     def play(self, wav_path: Path) -> None:
         if not wav_path.exists():
@@ -239,6 +297,7 @@ class AnnouncementPlayer:
                 )
             original_state = original.get("state", "stop")
             original_id: int | None = None
+            original_file: str | None = None
             original_elapsed = 0.0
             if original_state != "stop":
                 try:
@@ -246,6 +305,9 @@ class AnnouncementPlayer:
                     original_elapsed = float(original.get("elapsed", "0"))
                 except (KeyError, ValueError):
                     original_id = None
+                original_file = self._snapshot_current_file(original_id)
+
+            self._disable_queue_modes_for_announcement(original)
 
             ann_id: int | None = None
             volume_changes: dict[str, tuple[int, int]] = {}
@@ -277,20 +339,47 @@ class AnnouncementPlayer:
                 else:
                     raise TimeoutError("Announcement did not finish before timeout")
             finally:
-                if should_restore and original_state == "pause":
-                    # playid/seekid both transiently start playback. Keep the
-                    # receivers muted until OwnTone is back in PAUSED state.
-                    muted = self._mute_unchanged_outputs(volume_changes)
-                    try:
-                        self._restore(original_state, original_id, original_elapsed)
-                    finally:
-                        self._restore_muted_outputs(volume_changes, muted)
-                else:
-                    self._restore_output_volumes(volume_changes)
-                    if should_restore:
-                        self._restore(original_state, original_id, original_elapsed)
+                restore_error: Exception | None = None
+                try:
+                    if should_restore and original_state == "pause":
+                        # playid/seekid transiently start playback. Keep untouched
+                        # outputs muted until the saved source is paused again.
+                        muted = self._mute_unchanged_outputs(volume_changes)
+                        try:
+                            original_id = self._restore(
+                                original_state,
+                                original_id,
+                                original_elapsed,
+                                original_file,
+                            )
+                        finally:
+                            self._restore_muted_outputs(volume_changes, muted)
+                    else:
+                        self._restore_output_volumes(volume_changes)
+                        if should_restore:
+                            original_id = self._restore(
+                                original_state,
+                                original_id,
+                                original_elapsed,
+                                original_file,
+                            )
+                except Exception as exc:
+                    restore_error = exc
+                finally:
+                    self._restore_queue_modes(original)
 
                 if ann_id is not None:
-                    self.mpd.command(f"deleteid {ann_id}", ignore_error=True)
+                    # Never remove the item OwnTone still regards as current.
+                    # Deleting the active announcement after a failed restore
+                    # produces the blank/non-playing Remote state.
+                    try:
+                        current = self._status()
+                        if current.get("songid") != str(ann_id):
+                            self.mpd.command(f"deleteid {ann_id}", ignore_error=True)
+                    except Exception:
+                        pass
+
+                if restore_error is not None:
+                    raise restore_error
         finally:
             os.close(lock_fd)
