@@ -275,7 +275,19 @@ the announcement, it is restored to the paused state without intentionally
 unpausing the receivers: selected outputs whose volume was not manually changed
 are briefly muted while OwnTone performs the internal play/seek/pause sequence.
 
+The original queue item's URI/path is also saved. If its queue id disappears
+during the interruption, `owntone-announce` re-adds that exact source before
+restoring playback instead of leaving OwnTone with no current item.
+
 A non-seekable stream may restart because OwnTone/MPD cannot seek it.
+
+### Repeat and consume modes
+
+OwnTone repeat/single and consume settings apply globally to the current player,
+including temporary queue items. During an announcement these modes are
+temporarily disabled so a `repeat single` ambient track does not cause the
+announcement itself to loop, and consume mode cannot remove queue items. The
+original settings are restored after the previous source is current again.
 
 ### Library scans
 
