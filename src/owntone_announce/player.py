@@ -148,7 +148,7 @@ class AnnouncementPlayer:
                 pass
 
             try:
-                self._start_announcement(ann_id)
+                self.mpd.command(f"playid {ann_id}")
             except (MPDError, OSError) as second_error:
                 raise RuntimeError(
                     "OwnTone could not start the announcement after retrying output activation"
@@ -194,7 +194,7 @@ class AnnouncementPlayer:
                 response = fields(self.mpd.command(f"addid {quote(path)}"))
                 ann_id = int(response["Id"])
                 volume_changes = self._boost_output_volumes()
-                self.mpd.command(f"playid {ann_id}")
+                self._start_announcement(ann_id)
 
                 deadline = time.monotonic() + self.timeout_seconds
                 seen = False
