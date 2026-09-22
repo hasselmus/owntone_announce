@@ -34,6 +34,10 @@ When an announcement is played, `owntone-announce`:
 It deliberately does **not** choose speakers for you. The current OwnTone output
 selection remains authoritative.
 
+Player state/progress polling is done through MPD. OwnTone's HTTP API is used only
+for per-output volume information/changes; those volume adjustments are best-effort
+and a transient HTTP failure does not block announcement playback.
+
 The generated WAV contains trailing silence. Playback switches back before the
 physical end of the file, avoiding the short EOF/restart artefact some OwnTone /
 AirPlay combinations otherwise produce.
