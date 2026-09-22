@@ -56,7 +56,7 @@ On Debian / Raspberry Pi OS:
 sudo apt install python3-venv ffmpeg
 git clone https://github.com/hasselmus/owntone_announce.git
 cd owntone_announce
-sudo ./install.sh
+sudo bash install.sh
 owntone-announce doctor
 ```
 
