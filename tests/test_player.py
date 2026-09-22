@@ -58,3 +58,52 @@ def test_pause_restore_mute_only_unchanged_outputs():
     player._restore_muted_outputs(state, muted)
     assert player.http.volumes["1"] == 12
     assert player.http.volumes["2"] == 60
+
+
+class SequenceMPD:
+    def __init__(self):
+        self.commands = []
+        self.statuses = [
+            ["state: play", "songid: 9"],
+            ["state: play", "songid: 9"],
+            ["state: play", "songid: 9"],
+            ["state: pause", "songid: 9"],
+            ["state: pause", "songid: 9"],
+            ["state: pause", "songid: 9"],
+            ["state: pause", "songid: 9"],
+        ]
+
+    def command(self, command, **_kwargs):
+        self.commands.append(command)
+        if command == "status":
+            return self.statuses.pop(0)
+        return []
+
+
+def test_restore_paused_waits_for_play_then_reasserts_pause(monkeypatch):
+    player = AnnouncementPlayer.__new__(AnnouncementPlayer)
+    player.mpd = SequenceMPD()
+    monkeypatch.setattr("owntone_announce.player.time.sleep", lambda _x: None)
+
+    player._restore("pause", 9, 12.5)
+
+    assert player.mpd.commands[:3] == [
+        "playid 9",
+        "status",
+        "seekid 9 12.500",
+    ]
+    assert "pause 1" in player.mpd.commands
+    assert player.mpd.commands[-3:] == ["status", "status", "status"]
+
+
+class BrokenHTTP:
+    def outputs(self):
+        raise OSError("transient http failure")
+
+
+def test_volume_boost_is_best_effort():
+    player = AnnouncementPlayer.__new__(AnnouncementPlayer)
+    player.http = BrokenHTTP()
+    player.minimum_volume = 40
+
+    assert player._boost_output_volumes() == {}
