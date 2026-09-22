@@ -131,8 +131,8 @@ class AnnouncementPlayer:
             time.sleep(0.25)
 
             try:
-                status = self.http.player()
-                if status.get("item_id") == ann_id and status.get("state") == "play":
+                status = self._status()
+                if status.get("songid") == str(ann_id) and status.get("state") == "play":
                     return
             except Exception:
                 pass
@@ -154,15 +154,67 @@ class AnnouncementPlayer:
                     "OwnTone could not start the announcement after retrying output activation"
                 ) from second_error
 
+    def _status(self) -> dict[str, str]:
+        return fields(self.mpd.command("status"))
+
+    def _wait_state(
+        self,
+        expected: str,
+        *,
+        song_id: int | None = None,
+        timeout: float = 3.0,
+        stable_checks: int = 1,
+    ) -> dict[str, str]:
+        deadline = time.monotonic() + timeout
+        stable = 0
+        last: dict[str, str] = {}
+        while time.monotonic() < deadline:
+            last = self._status()
+            state_ok = last.get("state") == expected
+            song_ok = song_id is None or last.get("songid") == str(song_id)
+            if state_ok and song_ok:
+                stable += 1
+                if stable >= stable_checks:
+                    return last
+            else:
+                stable = 0
+            time.sleep(0.10)
+        raise RuntimeError(
+            f"OwnTone did not settle in state={expected!r}"
+            + (f", songid={song_id}" if song_id is not None else "")
+            + f"; last status was {last}"
+        )
+
     def _restore(self, state: str, song_id: int | None, elapsed: float) -> None:
         if state in ("play", "pause") and song_id is not None:
-            self.mpd.command(f"playid {song_id}", ignore_error=True)
+            self.mpd.command(f"playid {song_id}")
+            self._wait_state("play", song_id=song_id)
+
             if elapsed > 0.05:
-                self.mpd.command(f"seekid {song_id} {elapsed:.3f}", ignore_error=True)
+                self.mpd.command(f"seekid {song_id} {elapsed:.3f}")
+                # In OwnTone 29 seekid explicitly calls playback_start(). Wait
+                # for that transition to finish before attempting to pause.
+                self._wait_state("play", song_id=song_id)
+
             if state == "pause":
-                self.mpd.command("pause 1", ignore_error=True)
+                # OwnTone output activation / seek completion can race an early
+                # MPD pause command. Reassert PAUSE until it has been observed
+                # stable for several polls.
+                deadline = time.monotonic() + 4.0
+                while time.monotonic() < deadline:
+                    status = self._status()
+                    if status.get("state") == "pause" and status.get("songid") == str(song_id):
+                        self._wait_state(
+                            "pause", song_id=song_id, timeout=1.0, stable_checks=3
+                        )
+                        return
+                    if status.get("state") == "play":
+                        self.mpd.command("pause 1", ignore_error=True)
+                    time.sleep(0.10)
+                raise RuntimeError("OwnTone would not return to the original paused state")
         elif state == "stop":
             self.mpd.command("stop", ignore_error=True)
+            self._wait_state("stop", timeout=2.0)
 
     def play(self, wav_path: Path) -> None:
         if not wav_path.exists():
@@ -198,14 +250,15 @@ class AnnouncementPlayer:
 
                 deadline = time.monotonic() + self.timeout_seconds
                 seen = False
+                restore_margin_seconds = self.restore_margin_ms / 1000.0
                 while time.monotonic() < deadline:
-                    status = self.http.player()
-                    current_id = status.get("item_id")
-                    if current_id == ann_id:
+                    status = self._status()
+                    current_id = status.get("songid")
+                    if current_id == str(ann_id):
                         seen = True
-                        length = int(status.get("item_length_ms") or 0)
-                        progress = int(status.get("item_progress_ms") or 0)
-                        if length and progress >= max(0, length - self.restore_margin_ms):
+                        length = float(status.get("duration") or 0)
+                        progress = float(status.get("elapsed") or 0)
+                        if length and progress >= max(0.0, length - restore_margin_seconds):
                             break
                     elif seen:
                         # Respect apparent manual intervention while announcing.
