@@ -32,9 +32,18 @@ class AnnouncementPlayer:
     def _boost_output_volumes(self) -> dict[str, tuple[int, int]]:
         # Track all selected outputs, not only those whose volume changes. That
         # lets paused-state restoration temporarily mute every untouched output.
+        #
+        # Volume boosting is deliberately best-effort: announcement playback is
+        # controlled through MPD and should not fail merely because OwnTone's
+        # HTTP API has a transient problem.
         state: dict[str, tuple[int, int]] = {}
         try:
-            for output in self.http.outputs():
+            outputs = self.http.outputs()
+        except Exception:
+            return state
+
+        try:
+            for output in outputs:
                 if not output.get("selected"):
                     continue
                 output_id = str(output["id"])
@@ -45,7 +54,7 @@ class AnnouncementPlayer:
                     self.http.set_output_volume(output_id, temporary)
         except Exception:
             self._restore_output_volumes(state, preserve_manual_changes=False)
-            raise
+            return {}
         return state
 
     def _restore_output_volumes(
