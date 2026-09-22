@@ -31,7 +31,7 @@ class AnnouncementService:
                 found = {line[6:] for line in lines if line.startswith("file: ")}
                 if wanted in found:
                     return
-            except MPDError:
+            except (MPDError, OSError):
                 pass
             time.sleep(0.5)
         raise TimeoutError(f"OwnTone did not index {wav} within {timeout:.0f}s")
@@ -59,7 +59,6 @@ class AnnouncementService:
             destination,
             float(self.cfg["playback"]["trailing_silence_seconds"]),
         )
-        self.http.rescan()
         self._wait_indexed(destination)
         item = self.registry.put(
             name,
@@ -85,7 +84,6 @@ class AnnouncementService:
         except FileNotFoundError:
             pass
         self.registry.save()
-        self.http.rescan()
         if old.get("homebridge"):
             sync_homebridge(self.registry, self.cfg)
         return True
