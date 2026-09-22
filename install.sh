@@ -18,7 +18,12 @@ python3 -m venv "$VENV"
 "$VENV/bin/pip" install --upgrade pip >/dev/null
 "$VENV/bin/pip" install "$ROOT"
 ln -sfn "$VENV/bin/owntone-announce" /usr/local/bin/owntone-announce
-ln -sfn "$VENV/bin/alarm-audio" /usr/local/bin/alarm-audio
+if [[ -e /usr/local/bin/alarm-audio && ! -L /usr/local/bin/alarm-audio ]]; then
+  PRESERVED_LEGACY_ALARM=1
+else
+  ln -sfn "$VENV/bin/alarm-audio" /usr/local/bin/alarm-audio
+  PRESERVED_LEGACY_ALARM=0
+fi
 
 if [[ ! -e /etc/owntone-announce/config.json ]]; then
   install -m 0644 "$ROOT/examples/config.json" /etc/owntone-announce/config.json
@@ -37,3 +42,12 @@ Next:
   3. Add a message, for example:
        sudo owntone-announce add dinner "Dinner is ready"
 MSG
+
+if [[ "$PRESERVED_LEGACY_ALARM" -eq 1 ]]; then
+  cat <<MSG
+
+Existing /usr/local/bin/alarm-audio was preserved. After importing its messages,
+switch to the packaged compatibility command with:
+  ln -sfn "$VENV/bin/alarm-audio" /usr/local/bin/alarm-audio
+MSG
+fi
