@@ -125,23 +125,17 @@ class AnnouncementPlayer:
             except Exception:
                 pass
 
-    def _start_announcement(self, ann_id: int) -> None:
-        """Start playback, tolerating one output activation failure.
-
-        OwnTone deselects an output that fails activation. If playid reports an
-        error because one receiver disappeared, either the announcement is
-        already running on the remaining outputs or a single retry can start it
-        after the failed receiver has been deselected.
-        """
+    def _start_item(self, item_id: int, description: str) -> None:
+        """Start an item, tolerating one output activation failure."""
         try:
-            self.mpd.command(f"playid {ann_id}")
+            self.mpd.command(f"playid {item_id}")
             return
         except (MPDError, OSError) as first_error:
             time.sleep(0.25)
 
             try:
                 status = self._status()
-                if status.get("songid") == str(ann_id) and status.get("state") == "play":
+                if status.get("songid") == str(item_id) and status.get("state") == "play":
                     return
             except Exception:
                 pass
@@ -157,11 +151,14 @@ class AnnouncementPlayer:
                 pass
 
             try:
-                self.mpd.command(f"playid {ann_id}")
+                self.mpd.command(f"playid {item_id}")
             except (MPDError, OSError) as second_error:
                 raise RuntimeError(
-                    "OwnTone could not start the announcement after retrying output activation"
+                    f"OwnTone could not start {description} after retrying output activation"
                 ) from second_error
+
+    def _start_announcement(self, ann_id: int) -> None:
+        self._start_item(ann_id, "the announcement")
 
     def _status(self) -> dict[str, str]:
         return fields(self.mpd.command("status"))
@@ -255,7 +252,7 @@ class AnnouncementPlayer:
             if restore_id is None:
                 raise RuntimeError("Original OwnTone queue item disappeared and could not be reconstructed")
 
-            self.mpd.command(f"playid {restore_id}")
+            self._start_item(restore_id, "the original source")
             self._wait_state("play", song_id=restore_id, timeout=5.0)
 
             if elapsed > 0.05:
