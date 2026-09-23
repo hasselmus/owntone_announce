@@ -270,6 +270,12 @@ WAV and does not require the TTS service.
 
 ### Queue restoration
 
+OwnTone 29 may continue to report a queue `songid` through MPD even after playback
+has entered the stopped state. Announcement completion therefore keys on both
+player state and queue id rather than assuming that a matching `songid` means
+the clip is still playing.
+
+
 Seekable tracks resume near their previous position. If playback was paused before
 the announcement, it is restored to the paused state without intentionally
 unpausing the receivers: selected outputs whose volume was not manually changed
