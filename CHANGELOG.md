@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4 - 2026-09-23
+
+- Fix announcement completion detection on OwnTone 29: a stopped player may still report a queue songid, including the temporary announcement id.
+- Treat STOPPED as successful completion after the announcement has been observed playing, then run normal source restoration instead of waiting for timeout.
+- Add regression coverage for the OwnTone 29 stopped-songid behavior and external playback takeover.
+
 ## 0.1.3 - 2026-09-22
 
 - Temporarily disable repeat/single and consume while the transient announcement item is current, then restore the user's original modes.
