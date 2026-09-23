@@ -322,14 +322,24 @@ class AnnouncementPlayer:
                 while time.monotonic() < deadline:
                     status = self._status()
                     current_id = status.get("songid")
-                    if current_id == str(ann_id):
+                    state = status.get("state")
+
+                    # OwnTone 29 may still report a queue songid while STOPPED.
+                    # Once we have actually observed the announcement playing,
+                    # STOPPED means the clip completed even if songid still
+                    # happens to equal the temporary queue item's id.
+                    if seen && state == "stop":
+                        break
+
+                    if current_id == str(ann_id) and state in ("play", "pause"):
                         seen = True
                         length = float(status.get("duration") or 0)
                         progress = float(status.get("elapsed") or 0)
                         if length and progress >= max(0.0, length - restore_margin_seconds):
                             break
                     elif seen:
-                        # Respect apparent manual intervention while announcing.
+                        # Another active item means somebody/something changed
+                        # playback while the announcement was running.
                         should_restore = False
                         break
                     time.sleep(0.10)
