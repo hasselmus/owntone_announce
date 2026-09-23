@@ -301,7 +301,7 @@ class AnnouncementPlayer:
             if seen and state == "stop":
                 return True
 
-            if current_id == str(ann_id) && state in ("play", "pause"):
+            if current_id == str(ann_id) and state in ("play", "pause"):
                 seen = True
                 length = float(status.get("duration") or 0)
                 progress = float(status.get("elapsed") or 0)
