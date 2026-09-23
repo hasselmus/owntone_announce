@@ -152,3 +152,45 @@ def test_original_item_is_readded_from_saved_uri_if_queue_id_disappears():
         "playlistid 9",
         'addid "file:/music/ambient.wav"',
     ]
+
+
+class StatusSequenceMPD:
+    def __init__(self, statuses):
+        self.statuses = list(statuses)
+        self.commands = []
+
+    def command(self, command, **_kwargs):
+        self.commands.append(command)
+        if command == "status":
+            return self.statuses.pop(0)
+        return []
+
+
+def test_announcement_completion_accepts_stopped_with_same_songid(monkeypatch):
+    player = AnnouncementPlayer.__new__(AnnouncementPlayer)
+    player.mpd = StatusSequenceMPD(
+        [
+            ["state: play", "songid: 7", "duration: 3.000", "elapsed: 1.000"],
+            ["state: stop", "songid: 7"],
+        ]
+    )
+    player.timeout_seconds = 5
+    player.restore_margin_ms = 500
+    monkeypatch.setattr("owntone_announce.player.time.sleep", lambda _x: None)
+
+    assert player._wait_announcement_end(7) is True
+
+
+def test_announcement_completion_detects_external_takeover(monkeypatch):
+    player = AnnouncementPlayer.__new__(AnnouncementPlayer)
+    player.mpd = StatusSequenceMPD(
+        [
+            ["state: play", "songid: 7", "duration: 3.000", "elapsed: 1.000"],
+            ["state: play", "songid: 99", "duration: 30.000", "elapsed: 2.000"],
+        ]
+    )
+    player.timeout_seconds = 5
+    player.restore_margin_ms = 500
+    monkeypatch.setattr("owntone_announce.player.time.sleep", lambda _x: None)
+
+    assert player._wait_announcement_end(7) is False
