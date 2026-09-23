@@ -298,7 +298,7 @@ class AnnouncementPlayer:
 
             # OwnTone 29 may still expose a queue songid while stopped. Once
             # the announcement was seen playing, STOPPED means it completed.
-            if seen && state == "stop":
+            if seen and state == "stop":
                 return True
 
             if current_id == str(ann_id) && state in ("play", "pause"):
