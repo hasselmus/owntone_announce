@@ -280,6 +280,40 @@ class AnnouncementPlayer:
             self._wait_state("stop", timeout=2.0)
         return song_id
 
+    def _wait_announcement_end(self, ann_id: int) -> bool:
+        """Wait until the announcement is done.
+
+        Returns True when the wrapper should restore the saved source. Returns
+        False if another active item took over while the announcement was
+        running, which is treated as manual/external intervention.
+        """
+        deadline = time.monotonic() + self.timeout_seconds
+        seen = False
+        restore_margin_seconds = self.restore_margin_ms / 1000.0
+
+        while time.monotonic() < deadline:
+            status = self._status()
+            current_id = status.get("songid")
+            state = status.get("state")
+
+            # OwnTone 29 may still expose a queue songid while stopped. Once
+            # the announcement was seen playing, STOPPED means it completed.
+            if seen && state == "stop":
+                return True
+
+            if current_id == str(ann_id) && state in ("play", "pause"):
+                seen = True
+                length = float(status.get("duration") or 0)
+                progress = float(status.get("elapsed") or 0)
+                if length and progress >= max(0.0, length - restore_margin_seconds):
+                    return True
+            elif seen:
+                return False
+
+            time.sleep(0.10)
+
+        raise TimeoutError("Announcement did not finish before timeout")
+
     def play(self, wav_path: Path) -> None:
         if not wav_path.exists():
             raise FileNotFoundError(wav_path)
@@ -316,35 +350,7 @@ class AnnouncementPlayer:
                 volume_changes = self._boost_output_volumes()
                 self._start_announcement(ann_id)
 
-                deadline = time.monotonic() + self.timeout_seconds
-                seen = False
-                restore_margin_seconds = self.restore_margin_ms / 1000.0
-                while time.monotonic() < deadline:
-                    status = self._status()
-                    current_id = status.get("songid")
-                    state = status.get("state")
-
-                    # OwnTone 29 may still report a queue songid while STOPPED.
-                    # Once we have actually observed the announcement playing,
-                    # STOPPED means the clip completed even if songid still
-                    # happens to equal the temporary queue item's id.
-                    if seen && state == "stop":
-                        break
-
-                    if current_id == str(ann_id) and state in ("play", "pause"):
-                        seen = True
-                        length = float(status.get("duration") or 0)
-                        progress = float(status.get("elapsed") or 0)
-                        if length and progress >= max(0.0, length - restore_margin_seconds):
-                            break
-                    elif seen:
-                        # Another active item means somebody/something changed
-                        # playback while the announcement was running.
-                        should_restore = False
-                        break
-                    time.sleep(0.10)
-                else:
-                    raise TimeoutError("Announcement did not finish before timeout")
+                should_restore = self._wait_announcement_end(ann_id)
             finally:
                 restore_error: Exception | None = None
                 try:
