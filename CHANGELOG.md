@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5 - 2026-09-27
+
+- Add `owntone-announce retune NAME TEXT [--voice VOICE]` for replacing the TTS audio of an existing announcement without changing its Homebridge/Apple Home registration.
+- Preserve filename, label and Homebridge flag exactly during retune; no Homebridge reconciliation or restart is performed.
+- Wait for OwnTone to report changed file metadata after replacing an existing WAV, avoiding immediate-play races with filesystem indexing.
+
 ## 0.1.4 - 2026-09-23
 
 - Fix announcement completion detection on OwnTone 29: a stopped player may still report a queue songid, including the temporary announcement id.
