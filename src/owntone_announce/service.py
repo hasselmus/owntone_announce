@@ -35,6 +35,52 @@ class AnnouncementService:
             time.sleep(0.5)
         raise TimeoutError(f"OwnTone did not index {wav} within {timeout:.0f}s")
 
+    def _index_marker(self, wav: Path) -> tuple[str | None, str | None] | None:
+        wanted = virtual_file_path(wav)
+        virtual_dir = "file:" + str(wav.parent.resolve())
+        lines = self.mpd.command(f"listallinfo {quote(virtual_dir)}")
+
+        current: str | None = None
+        modified: str | None = None
+        duration: str | None = None
+        for line in lines:
+            if line.startswith("file: "):
+                if current == wanted:
+                    return modified, duration
+                current = line[6:]
+                modified = None
+                duration = None
+            elif current == wanted:
+                if line.startswith("Last-Modified: "):
+                    modified = line[len("Last-Modified: "):]
+                elif line.startswith("duration: "):
+                    duration = line[len("duration: "):]
+
+        if current == wanted:
+            return modified, duration
+        return None
+
+    def _wait_reindexed(
+        self,
+        wav: Path,
+        previous: tuple[str | None, str | None] | None,
+        timeout: float = 60.0,
+    ) -> None:
+        if previous is None:
+            self._wait_indexed(wav, timeout)
+            return
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                marker = self._index_marker(wav)
+                if marker is not None and marker != previous:
+                    return
+            except (MPDError, OSError):
+                pass
+            time.sleep(0.25)
+        raise TimeoutError(f"OwnTone did not re-index {wav} within {timeout:.0f}s")
+
     def add(
         self,
         name: str,
@@ -94,13 +140,18 @@ class AnnouncementService:
 
         selected_voice = voice or existing.get("voice") or self.cfg["tts"]["voice"]
         destination = self.audio_dir / existing["file"]
+        try:
+            previous_marker = self._index_marker(destination)
+        except (MPDError, OSError):
+            previous_marker = None
+
         synthesize_wav(
             text,
             selected_voice,
             destination,
             float(self.cfg["playback"]["trailing_silence_seconds"]),
         )
-        self._wait_indexed(destination)
+        self._wait_reindexed(destination, previous_marker)
 
         item = self.registry.retune(name, text=text, voice=selected_voice)
         self.registry.save()
