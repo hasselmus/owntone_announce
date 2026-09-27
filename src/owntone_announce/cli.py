@@ -32,6 +32,14 @@ def _parser() -> argparse.ArgumentParser:
     hb.add_argument("--no-homebridge", dest="homebridge", action="store_false")
     add.set_defaults(homebridge=None)
 
+    retune = sub.add_parser(
+        "retune",
+        help="replace TTS audio for an existing announcement without changing integrations",
+    )
+    retune.add_argument("name")
+    retune.add_argument("text")
+    retune.add_argument("--voice")
+
     rm = sub.add_parser("remove", help="remove an announcement")
     rm.add_argument("name")
 
@@ -105,6 +113,14 @@ def main(argv: list[str] | None = None) -> int:
                 homebridge=args.homebridge,
             )
             print(f"Added {args.name}: {item['text']}")
+            return 0
+        if args.command == "retune":
+            item = AnnouncementService(cfg, registry).retune(
+                args.name,
+                args.text,
+                voice=args.voice,
+            )
+            print(f"Retuned {args.name}: {item['text']}")
             return 0
         if args.command == "remove":
             if AnnouncementService(cfg, registry).remove(args.name):
