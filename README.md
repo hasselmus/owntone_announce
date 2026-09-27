@@ -8,6 +8,7 @@ messages live in one registry and can be created, removed and played by name.
 
 ```text
 owntone-announce add dinner "Dinner is ready"
+owntone-announce retune dinner "Dinner will be ready in five minutes."
 owntone-announce play dinner
 owntone-announce remove dinner
 ```
@@ -96,6 +97,18 @@ Use another Edge TTS voice:
 ```bash
 sudo owntone-announce add dinner "Dinner is ready" --voice en-GB-RyanNeural
 ```
+
+Replace only the TTS audio/text of an existing announcement:
+
+```bash
+sudo owntone-announce retune dinner "Dinner will be ready in five minutes."
+```
+
+`retune` requires an existing announcement. It keeps the same WAV filename,
+display label and Homebridge registration, and deliberately does not reconcile
+or restart Homebridge. Existing Apple Home automations therefore continue to
+refer to the same accessory. An optional `--voice` changes the voice for this
+and subsequent registry metadata without changing integration settings.
 
 Play it:
 
