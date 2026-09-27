@@ -72,6 +72,40 @@ class AnnouncementService:
             sync_homebridge(self.registry, self.cfg)
         return item
 
+    def retune(
+        self,
+        name: str,
+        text: str,
+        *,
+        voice: str | None = None,
+    ) -> dict[str, Any]:
+        """Replace an existing announcement's TTS audio only.
+
+        The existing filename, label and Homebridge registration are preserved,
+        and Homebridge reconciliation is deliberately not invoked.
+        """
+        validate_name(name)
+        if not text.strip():
+            raise ValueError("Announcement text cannot be empty")
+
+        existing = self.registry.get(name)
+        if existing is None:
+            raise ValueError(f"No such announcement: {name}")
+
+        selected_voice = voice or existing.get("voice") or self.cfg["tts"]["voice"]
+        destination = self.audio_dir / existing["file"]
+        synthesize_wav(
+            text,
+            selected_voice,
+            destination,
+            float(self.cfg["playback"]["trailing_silence_seconds"]),
+        )
+        self._wait_indexed(destination)
+
+        item = self.registry.retune(name, text=text, voice=selected_voice)
+        self.registry.save()
+        return item
+
     def remove(self, name: str) -> bool:
         validate_name(name)
         old = self.registry.remove(name)
