@@ -41,7 +41,13 @@ def test_retune_does_not_sync_homebridge(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("owntone_announce.service.sync_homebridge", forbidden_sync)
 
     service = AnnouncementService(cfg, registry)
-    monkeypatch.setattr(service, "_wait_indexed", lambda _wav: None)
+    monkeypatch.setattr(service, "_index_marker", lambda _wav: ("old", "3.0"))
+    reindex_calls = []
+    monkeypatch.setattr(
+        service,
+        "_wait_reindexed",
+        lambda wav, previous: reindex_calls.append((wav, previous)),
+    )
 
     item = service.retune("dinner", "Dinner in five minutes", voice="new-voice")
 
@@ -53,6 +59,7 @@ def test_retune_does_not_sync_homebridge(tmp_path: Path, monkeypatch):
             2.0,
         )
     ]
+    assert reindex_calls == [(audio_dir / "dinner.wav", ("old", "3.0"))]
     assert item["file"] == "dinner.wav"
     assert item["label"] == "Dinner ready"
     assert item["homebridge"] is True
