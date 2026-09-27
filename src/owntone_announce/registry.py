@@ -54,6 +54,16 @@ class Registry:
         self.messages[name] = item
         return item
 
+    def retune(self, name: str, *, text: str, voice: str) -> dict[str, Any]:
+        """Update TTS metadata without changing registration/integration fields."""
+        validate_name(name)
+        item = self.messages.get(name)
+        if item is None:
+            raise ValueError(f"No such announcement: {name}")
+        item["text"] = text
+        item["voice"] = voice
+        return item
+
     def remove(self, name: str) -> dict[str, Any] | None:
         validate_name(name)
         return self.messages.pop(name, None)
